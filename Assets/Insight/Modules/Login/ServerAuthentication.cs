@@ -8,7 +8,7 @@ namespace Insight
     {
         InsightServer server;
 
-        public List<UserContainer> registeredUsers = new List<UserContainer>();
+        public Dictionary<int, UserContainer> registeredUsers = new Dictionary<int, UserContainer>();
 
         public override void Initialize(InsightServer server, ModuleManager manager)
         {
@@ -37,7 +37,7 @@ namespace Insight
             {
                 string UniqueId = Guid.NewGuid().ToString();
 
-                registeredUsers.Add(new UserContainer()
+                registeredUsers.Add(netMsg.connectionId, new UserContainer()
                 {
                     username = message.AccountName,
                     uniqueId = UniqueId,
@@ -63,26 +63,12 @@ namespace Insight
 
         void HandleDisconnect(int connectionId)
         {
-            foreach (UserContainer user in registeredUsers)
-            {
-                if (user.connectionId == connectionId)
-                {
-                    registeredUsers.Remove(user);
-                    return;
-                }
-            }
+            registeredUsers.Remove(connectionId);
         }
 
         public UserContainer GetUserByConnection(int connectionId)
         {
-            foreach (UserContainer user in registeredUsers)
-            {
-                if (user.connectionId == connectionId)
-                {
-                    return user;
-                }
-            }
-            return null;
+            return registeredUsers[connectionId];
         }
     }
 

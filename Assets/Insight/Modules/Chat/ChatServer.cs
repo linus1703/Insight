@@ -39,7 +39,7 @@ namespace Insight
                 //Inject the username into the message
                 message.Origin = authModule.GetUserByConnection(netMsg.connectionId).username;
 
-                foreach(UserContainer user in authModule.registeredUsers)
+                foreach(UserContainer user in authModule.registeredUsers.Values)
                 {
                     server.SendToClient(user.connectionId, (short)MsgId.Chat, message);
                 }
