@@ -7,9 +7,10 @@ namespace Insight
 {
     public class ClientGameManager : InsightModule
     {
+        static readonly ILogger logger = LogFactory.GetLogger(typeof(ClientGameManager));
+
         InsightClient client;
-        [SerializeField] NetworkManager networkManager;
-        [SerializeField] Transport networkManagerTransport;
+        Transport networkManagerTransport;
 
         public List<GameContainer> gamesList = new List<GameContainer>();
 
@@ -17,41 +18,49 @@ namespace Insight
         {
             this.client = client;
 
+            networkManagerTransport = Transport.activeTransport;
+
             RegisterHandlers();
         }
 
         void RegisterHandlers()
         {
-            client.RegisterHandler((short)MsgId.ChangeServers, HandleChangeServersMsg);
-            client.RegisterHandler((short)MsgId.GameList, HandleGameListMsg);
+            client.RegisterHandler<ChangeServerMsg>(HandleChangeServersMsg);
+            client.RegisterHandler<GameListMsg>(HandleGameListMsg);
         }
 
         void HandleChangeServersMsg(InsightNetworkMessage netMsg)
         {
             ChangeServerMsg message = netMsg.ReadMessage<ChangeServerMsg>();
 
-            if (client.logNetworkMessages) { Debug.Log("[InsightClient] - Connecting to GameServer: " + message.NetworkAddress + ":" + message.NetworkPort + "/" + message.SceneName); }
+            logger.Log("[InsightClient] - Connecting to GameServer: " + message.NetworkAddress + ":" + message.NetworkPort + "/" + message.SceneName);
 
             if(networkManagerTransport.GetType().GetField("port") != null) {
                 networkManagerTransport.GetType().GetField("port").SetValue(networkManagerTransport, message.NetworkPort);
             }
 
-            networkManager.networkAddress = message.NetworkAddress;
+            //For IgnoranceTransport
+            if (networkManagerTransport.GetType().GetField("CommunicationPort") != null)
+            {
+                networkManagerTransport.GetType().GetField("CommunicationPort").SetValue(networkManagerTransport, message.NetworkPort);
+            }
+
+            NetworkManager.singleton.networkAddress = message.NetworkAddress;
             SceneManager.LoadScene(message.SceneName);
-            networkManager.StartClient();
+            NetworkManager.singleton.StartClient();
         }
 
         void HandleGameListMsg(InsightNetworkMessage netMsg)
         {
             GameListMsg message = netMsg.ReadMessage<GameListMsg>();
 
-            if (client.logNetworkMessages) { Debug.Log("[InsightClient] - Received Games List"); };
+            logger.Log("[InsightClient] - Received Games List");
 
             gamesList.Clear();
 
             foreach (GameContainer game in message.gamesArray)
             {
-                Debug.Log(game.SceneName);
+                logger.Log(game.SceneName);
 
                 gamesList.Add(new GameContainer()
                 {
@@ -67,17 +76,17 @@ namespace Insight
         #region Message Senders
         public void SendRequestSpawnStart(RequestSpawnStartMsg requestSpawnStartMsg)
         {
-            client.Send((short)MsgId.RequestSpawnStart, requestSpawnStartMsg);
+            client.Send(requestSpawnStartMsg);
         }
 
         public void SendJoinGameMsg(string UniqueID)
         {
-            client.Send((short)MsgId.JoinGame, new JoinGamMsg() { UniqueID = UniqueID });
+            client.Send(new JoinGameMsg() { UniqueID = UniqueID });
         }
 
         public void SendGetGameListMsg()
         {
-            client.Send((short)MsgId.GameList, new GameListMsg());
+            client.Send(new GameListMsg());
         }
         #endregion
     }

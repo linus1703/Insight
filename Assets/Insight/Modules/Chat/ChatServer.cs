@@ -1,9 +1,12 @@
-﻿using UnityEngine;
+﻿using Mirror;
+using UnityEngine;
 
 namespace Insight
 {
     public class ChatServer : InsightModule
     {
+        static readonly ILogger logger = LogFactory.GetLogger(typeof(ChatServer));
+
         InsightServer server;
         ServerAuthentication authModule;
 
@@ -25,12 +28,12 @@ namespace Insight
 
         void RegisterHandlers()
         {
-            server.RegisterHandler((short)MsgId.Chat, HandleChatMsg);
+            server.RegisterHandler<ChatMsg>(HandleChatMsg);
         }
 
         void HandleChatMsg(InsightNetworkMessage netMsg)
         {
-            if (server.logNetworkMessages) { Debug.Log("[ChatServer] - Received Chat Message."); }
+            logger.Log("[ChatServer] - Received Chat Message.");
 
             ChatMsg message = netMsg.ReadMessage<ChatMsg>();
 
@@ -41,7 +44,7 @@ namespace Insight
 
                 foreach(UserContainer user in authModule.registeredUsers)
                 {
-                    server.SendToClient(user.connectionId, (short)MsgId.Chat, message);
+                    server.SendToClient(user.connectionId, message);
                 }
             }
 
@@ -49,7 +52,7 @@ namespace Insight
             else
             {
                 //Broadcast back to all other clients
-                server.SendToAll((short)MsgId.Chat, message);
+                server.SendToAll(message);
             }
         }
     }

@@ -3,58 +3,12 @@ using System.Collections.Generic;
 
 namespace Insight
 {
-    public enum MsgId : short
+    public class Message : NetworkMessage
     {
-        Error = -1,
-        Empty,
-        Status,
-        //Disconnect,
-
-        Login,
-        LoginResponse,
-
-        //Chat
-        Chat,
-        JoinChatChannel,
-        LeaveChatChannel,
-
-        //GameManager
-        RegisterSpawner,
-        RegisterGame,
-        GameStatus,
-        GameList,
-        JoinGame,
-        LeaveGame,
-
-        //ProcessSpawner
-        RequestSpawnStart,
-        RequestSpawnStop,
-        KillSpawn,
-
-        //MatchMaking
-        StartMatchMaking,
-        StopMatchMaking,
-        
-        ChangeServers,
-        
-        //Health Management Msgs
-        SpawnerStatus,
+        public CallbackStatus Status = CallbackStatus.Default;
     }
 
-    public class ErrorMsg : MessageBase
-    {
-        public string Text;
-        public bool CauseDisconnect;
-    }
-
-    public class EmptyMsg : MessageBase { }
-
-    public class StatusMsg : MessageBase
-    {
-        public string Text;
-    }
-
-    public class PropertiesMsg : MessageBase
+    public class PropertiesMsg : Message
     {
         public string SceneName;
         public string GameType;
@@ -63,19 +17,18 @@ namespace Insight
         public string GamePassword;
     }
 
-    public class LoginMsg : MessageBase
+    public class LoginMsg : Message
     {
         public string AccountName;
         public string AccountPassword;
     }
 
-    public class LoginResponseMsg : MessageBase
+    public class LoginResponseMsg : Message
     {
-        public bool Authenticated;
         public string UniqueID;
     }
 
-    public class ChatMsg : MessageBase
+    public class ChatMsg : Message
     {
         public short Channel; //0 for global
         public string Origin; //This could be controlled by the server.
@@ -83,20 +36,20 @@ namespace Insight
         public string Data;
     }
 
-    public class JoinChatChannelMsg : MessageBase
+    public class JoinChatChannelMsg : Message
     {
         public short Channel;
         public string ChannelPassword;
     }
 
-    public class LeaveChatChannelMsg : MessageBase
+    public class LeaveChatChannelMsg : Message
     {
         public short Channel;
     }
 
     //Sent from a new Spawner after it connects to a master.
     //Used to register it to the MasterSpawner
-    public class RegisterSpawnerMsg : MessageBase
+    public class RegisterSpawnerMsg : Message
     {
         public string UniqueID; //Guid
         public int MaxThreads;
@@ -104,7 +57,7 @@ namespace Insight
 
     //Sent from a new GameServer after it connects to a Master.
     //Used to register it to the ServerGameManager
-    public class RegisterGameMsg : MessageBase
+    public class RegisterGameMsg : Message
     {
         public string UniqueID; //Guid
         public string NetworkAddress;
@@ -114,14 +67,14 @@ namespace Insight
         public int CurrentPlayers;
     }
 
-    public class GameStatusMsg : MessageBase
+    public class GameStatusMsg : Message
     {
         public string UniqueID; //Guid
         public int CurrentPlayers;
     }
 
     //Sent when requesting a new GameServer to be created running the provided scene.
-    public class RequestSpawnStartMsg : MessageBase
+    public class RequestSpawnStartMsg : Message
     {
         public string SceneName;
 
@@ -131,31 +84,31 @@ namespace Insight
     }
 
     //Asks the server to gracefully stop
-    public class RequestSpawnStopMsg : MessageBase
+    public class RequestSpawnStopMsg : Message
     {
         public string UniqueID; //Guid
     }
 
     //Force kill the server. Used if the server is not responding to normal msgs.
-    public class KillSpawnMsg : MessageBase
+    public class KillSpawnMsg : Message
     {
         public string UniqueID; //Guid
     }
 
     //Sent from a player client when they wants to join a matchmaking playlist
-    public class StartMatchMakingMsg : MessageBase
+    public class StartMatchMakingMsg : Message
     {
         public string SceneName;
     }
 
     //Sent from a player client when they want to quit matchmaking
-    public class StopMatchMakingMsg : MessageBase
+    public class StopMatchMakingMsg : Message
     {
 
     }
 
     //Sent from a player client requesting the list of currently active games.
-    public class GameListMsg : MessageBase
+    public class GameListMsg : Message
     {
         public GameContainer[] gamesArray;
 
@@ -166,13 +119,13 @@ namespace Insight
     }
 
     //Sent from a palyer client when they want to join a game by its UniqueID
-    public class JoinGamMsg : MessageBase
+    public class JoinGameMsg : Message
     {
         public string UniqueID;
     }
 
     //Sent from the MasterServer to a player client teling them to join the listed server.
-    public class ChangeServerMsg : MessageBase
+    public class ChangeServerMsg : Message
     {
         //This is msg would not support all transports in its current configuration.
         public string NetworkAddress;
@@ -182,7 +135,7 @@ namespace Insight
 
     //Updates the MasterSpawner with current status of the spawner
     //Used as a bacis load/health tracker.
-    public class SpawnerStatusMsg : MessageBase
+    public class SpawnerStatusMsg : Message
     {
         public int CurrentThreads;
     }

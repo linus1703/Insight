@@ -1,4 +1,4 @@
-﻿using Mirror;
+using Mirror;
 using System;
 using UnityEngine;
 
@@ -6,23 +6,13 @@ namespace Insight
 {
     public class InsightClient : InsightCommon
     {
+        static readonly ILogger logger = LogFactory.GetLogger(typeof(InsightClient));
+
         public bool AutoReconnect = true;
         protected int clientID = -1; //-1 = never connected, 0 = disconnected, 1 = connected
         protected int connectionID = 0;
 
         InsightNetworkConnection insightNetworkConnection;
-
-        Transport _transport;
-        public virtual Transport transport
-        {
-            get
-            {
-                _transport = _transport ?? GetComponent<Transport>();
-                if (_transport == null)
-                    Debug.LogWarning("InsightClient has no Transport component. Networking won't work without a Transport");
-                return _transport;
-            }
-        }
 
         public float ReconnectDelayInSeconds = 5f;
         float _reconnectTimer;
@@ -46,10 +36,10 @@ namespace Insight
             insightNetworkConnection.Initialize(this, networkAddress, clientID, connectionID);
             insightNetworkConnection.SetHandlers(messageHandlers);
 
-            transport.OnClientConnected.AddListener(OnConnected);
-            transport.OnClientDataReceived.AddListener(HandleBytes);
-            transport.OnClientDisconnected.AddListener(OnDisconnected);
-            transport.OnClientError.AddListener(OnError);
+            transport.OnClientConnected=OnConnected;
+            transport.OnClientDataReceived=HandleBytes;
+            transport.OnClientDisconnected=OnDisconnected;
+            transport.OnClientError=OnError;
         }
 
         public virtual void Update()
@@ -61,6 +51,12 @@ namespace Insight
 
         public void StartInsight(string Address)
         {
+            if(string.IsNullOrEmpty(Address))
+            {
+                logger.LogError("[InsightClient] - Address provided in StartInsight is Null or Empty. Not Starting.");
+                return;
+            }
+
             networkAddress = Address;
 
             StartInsight();
@@ -69,6 +65,15 @@ namespace Insight
         public override void StartInsight()
         {
             transport.ClientConnect(networkAddress);
+
+            OnStartInsight();
+
+            _reconnectTimer = Time.realtimeSinceStartup + ReconnectDelayInSeconds;
+        }
+
+        public void StartInsight(Uri uri)
+        {
+            transport.ClientConnect(uri);
 
             OnStartInsight();
 
@@ -87,7 +92,7 @@ namespace Insight
             {
                 if (!isConnected && (_reconnectTimer < Time.time))
                 {
-                    if (logNetworkMessages) { Debug.Log("[InsightClient] - Trying to reconnect..."); }
+                    logger.Log("[InsightClient] - Trying to reconnect...");
                     _reconnectTimer = Time.realtimeSinceStartup + ReconnectDelayInSeconds;
                     StartInsight();
                 }
@@ -99,21 +104,22 @@ namespace Insight
             transport.ClientSend(0,  new ArraySegment<byte>(data));
         }
 
-        public void Send(short msgType, MessageBase msg)
+        public void Send<T>(T msg) where T : Message
         {
-            Send(msgType, msg, null);
+            Send(msg, null);
         }
 
-        public void Send(short msgType, MessageBase msg, CallbackHandler callback)
+        public void Send<T>(T msg, CallbackHandler callback) where T : Message
         {
             if (!transport.ClientConnected())
             {
-                Debug.LogError("[InsightClient] - Client not connected!");
+                logger.LogError("[InsightClient] - Client not connected!");
                 return;
             }
 
             NetworkWriter writer = new NetworkWriter();
-            writer.WriteInt16(msgType);
+            int msgType = GetId(default(T) != null ? typeof(T) : msg.GetType());
+            writer.WriteUInt16((ushort)msgType);
 
             int callbackId = 0;
             if (callback != null)
@@ -128,7 +134,7 @@ namespace Insight
 
             writer.WriteInt32(callbackId);
 
-            msg.Serialize(writer);
+            Writer<T>.write.Invoke(writer, msg);
             transport.ClientSend(0, new ArraySegment<byte>(writer.ToArray()));
         }
 
@@ -140,10 +146,10 @@ namespace Insight
         {
             if (insightNetworkConnection != null)
             {
-                if (logNetworkMessages) { Debug.Log("[InsightClient] - Connected to Insight Server"); }
+                logger.Log("[InsightClient] - Connected to Insight Server");
                 connectState = ConnectState.Connected;
             }
-            else Debug.LogError("Skipped Connect message handling because m_Connection is null.");
+            else logger.LogError("Skipped Connect message handling because m_Connection is null.");
         }
 
         void OnDisconnected()
@@ -157,51 +163,53 @@ namespace Insight
         {
             InsightNetworkMessageDelegate msgDelegate;
             NetworkReader reader = new NetworkReader(data);
-            short msgType = reader.ReadInt16();
-            int callbackId = reader.ReadInt32();
-            InsightNetworkMessage msg = new InsightNetworkMessage(insightNetworkConnection, callbackId)
+            if(UnpackMessage(reader, out int msgType))
             {
-                msgType = msgType,
-                reader = reader
-            };
+                int callbackId = reader.ReadInt32();
+                InsightNetworkMessage msg = new InsightNetworkMessage(insightNetworkConnection, callbackId)
+                {
+                    msgType = msgType,
+                    reader = reader
+                };
 
-            if (callbacks.ContainsKey(callbackId))
-            {
-                callbacks[callbackId].callback.Invoke(CallbackStatus.Ok, msg);
-                callbacks.Remove(callbackId);
-            }
-            else if (messageHandlers.TryGetValue(msgType, out msgDelegate))
-            {
-                msgDelegate(msg);
+                if (callbacks.ContainsKey(callbackId))
+                {
+                    callbacks[callbackId].callback.Invoke(msg);
+                    callbacks.Remove(callbackId);
+                }
+                else if (messageHandlers.TryGetValue(msgType, out msgDelegate))
+                {
+                    msgDelegate(msg);
+                }
             }
             else
             {
                 //NOTE: this throws away the rest of the buffer. Need moar error codes
-                Debug.LogError("Unknown message ID " + msgType);// + " connId:" + connectionId);
+                logger.LogError("Unknown message ID " + msgType);// + " connId:" + connectionId);
             }
         }
 
         void OnError(Exception exception)
         {
             // TODO Let's discuss how we will handle errors
-            Debug.LogException(exception);
+            logger.LogException(exception);
         }
 
         void OnApplicationQuit()
         {
-            if (logNetworkMessages) { Debug.Log("[InsightClient] Stopping Client"); }
+            logger.Log("[InsightClient] Stopping Client");
             StopInsight();
         }
 
         ////------------Virtual Handlers-------------
         public virtual void OnStartInsight()
         {
-            if (logNetworkMessages) { Debug.Log("[InsightClient] - Connecting to Insight Server: " + networkAddress); }
+            logger.Log("[InsightClient] - Connecting to Insight Server: " + networkAddress);
         }
 
         public virtual void OnStopInsight()
         {
-            if (logNetworkMessages) { Debug.Log("[InsightClient] - Disconnecting from Insight Server"); }
+            logger.Log("[InsightClient] - Disconnecting from Insight Server");
         }
     }
 }

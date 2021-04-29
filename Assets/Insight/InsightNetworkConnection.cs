@@ -7,7 +7,9 @@ namespace Insight
 {
     public class InsightNetworkConnection : IDisposable
     {
-        Dictionary<short, InsightNetworkMessageDelegate> m_MessageHandlers;
+        static readonly ILogger logger = LogFactory.GetLogger(typeof(InsightNetworkConnection));
+
+        Dictionary<int, InsightNetworkMessageDelegate> m_MessageHandlers;
 
         public int hostId = -1;
         public int connectionId = -1;
@@ -60,7 +62,7 @@ namespace Insight
             isReady = false;
         }
 
-        internal void SetHandlers(Dictionary<short, InsightNetworkMessageDelegate> handlers)
+        internal void SetHandlers(Dictionary<int, InsightNetworkMessageDelegate> handlers)
         {
             m_MessageHandlers = handlers;
         }
@@ -82,7 +84,7 @@ namespace Insight
                 msgDelegate(message);
                 return true;
             }
-            Debug.LogError("NetworkConnection InvokeHandler no handler for " + msgType);
+            logger.LogError("NetworkConnection InvokeHandler no handler for " + msgType);
             return false;
         }
 
@@ -101,7 +103,7 @@ namespace Insight
         {
             if (m_MessageHandlers.ContainsKey(msgType))
             {
-                Debug.Log("NetworkConnection.RegisterHandler replacing " + msgType);
+                logger.Log("NetworkConnection.RegisterHandler replacing " + msgType);
             }
             m_MessageHandlers[msgType] = handler;
         }
@@ -120,21 +122,21 @@ namespace Insight
         // would be detected as some kind of message. send messages instead.
         protected virtual bool SendBytes(byte[] bytes)
         {
-            if (bytes.Length > int.MaxValue)
+            //Currently no support for transport channels in Insight.
+            if (bytes.Length > GetActiveInsight().transport.GetMaxPacketSize(0))
             {
-                Debug.LogError("NetworkConnection:SendBytes cannot send packet larger than " + int.MaxValue + " bytes");
+                logger.LogError("NetworkConnection:SendBytes cannot send packet larger than " + int.MaxValue + " bytes");
                 return false;
             }
 
             if (bytes.Length == 0)
             {
                 // zero length packets getting into the packet queues are bad.
-                Debug.LogError("NetworkConnection:SendBytes cannot send zero bytes");
+                logger.LogError("NetworkConnection:SendBytes cannot send zero bytes");
                 return false;
             }
 
-            byte error;
-            return TransportSend(bytes, out error);
+            return TransportSend(bytes);
         }
 
         public virtual void TransportReceive(ArraySegment<byte> data)
@@ -142,30 +144,35 @@ namespace Insight
             // unpack message
             NetworkReader reader = new NetworkReader(data);
 
-            short msgType = reader.ReadInt16();
-            int callbackId = reader.ReadInt32();
-
-            InsightNetworkMessageDelegate msgDelegate;
-            if (m_MessageHandlers.TryGetValue(msgType, out msgDelegate))
+            if (GetActiveInsight().UnpackMessage(reader, out int msgType))
             {
-                // create message here instead of caching it. so we can add it to queue more easily.
-                InsightNetworkMessage msg = new InsightNetworkMessage(this, callbackId);
-                msg.msgType = msgType;
-                msg.reader = reader;
+                logger.Log("ConnectionRecv " + this + " msgType:" + msgType + " content:" + BitConverter.ToString(data.Array, data.Offset, data.Count));
 
-                msgDelegate(msg);
-                lastMessageTime = Time.time;
+                int callbackId = reader.ReadInt32();
+
+                // try to invoke the handler for that message
+                InsightNetworkMessageDelegate msgDelegate;
+                if (m_MessageHandlers.TryGetValue(msgType, out msgDelegate))
+                {
+                    // create message here instead of caching it. so we can add it to queue more easily.
+                    InsightNetworkMessage msg = new InsightNetworkMessage(this, callbackId);
+                    msg.msgType = msgType;
+                    msg.reader = reader;
+
+                    msgDelegate(msg);
+                    lastMessageTime = Time.time;
+                }
             }
+
             else
             {
                 //NOTE: this throws away the rest of the buffer. Need moar error codes
-                Debug.LogError("Unknown message ID " + msgType + " connId:" + connectionId);
+                logger.LogError("Unknown message ID " + msgType + " connId:" + connectionId);
             }
         }
 
-        protected virtual bool TransportSend(byte[] bytes, out byte error)
+        protected virtual bool TransportSend(byte[] bytes)
         {
-            error = 0;
             if (client != null)
             {
                 client.Send(bytes);
@@ -173,16 +180,27 @@ namespace Insight
             }
             else if (server != null)
             {
-                server.SendToClient(connectionId, bytes);
-                return true;
+                return server.SendToClient(connectionId, bytes);
             }
             return false;
+        }
+
+        public InsightCommon GetActiveInsight()
+        {
+            if(client != null)
+            {
+                return client;
+            }
+            else
+            {
+                return server;
+            }
         }
     }
 
     public class InsightNetworkMessage
     {
-        public short msgType;
+        public int msgType;
         InsightNetworkConnection conn;
         public NetworkReader reader;
         public int callbackId { get; protected set; }
@@ -204,29 +222,24 @@ namespace Insight
             this.conn = conn;
         }
 
-        public TMsg ReadMessage<TMsg>() where TMsg : MessageBase, new()
+        public T ReadMessage<T>() where T : Message, new()
         {
-            TMsg msg = new TMsg();
-            msg.Deserialize(reader);
-            return msg;
-        }
-
-        public void ReadMessage<TMsg>(TMsg msg) where TMsg : MessageBase
-        {
-            msg.Deserialize(reader);
+            return reader.Read<T>();
         }
 
         public void Reply()
         {
-            Reply(this.msgType, new EmptyMsg());
+            Reply(new Message());
         }
 
-        public void Reply(short msgId, MessageBase msg)
+        public void Reply<T>(T msg) where T : Message, new()
         {
-            var writer = new NetworkWriter();
-            writer.WriteInt16(msgId);
+            NetworkWriter writer = new NetworkWriter();
+            int msgType = conn.GetActiveInsight().GetId(default(Message) != null ? typeof(Message) : msg.GetType());
+            writer.WriteUInt16((ushort)msgType);
+
             writer.WriteInt32(callbackId);
-            msg.Serialize(writer);
+            Writer<T>.write.Invoke(writer, msg);
 
             conn.Send(writer.ToArray());
         }

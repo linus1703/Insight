@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using Mirror;
+using UnityEngine;
 
 //TODO: Remove the example specific code from module
 
@@ -6,6 +7,8 @@ namespace Insight
 {
     public class ClientAuthentication : InsightModule
     {
+        static readonly ILogger logger = LogFactory.GetLogger(typeof(ClientAuthentication));
+
         InsightClient client;
 
         public string uniqueID;
@@ -28,29 +31,24 @@ namespace Insight
 
         public void SendLoginMsg(string username, string password)
         {
-            client.Send((short)MsgId.Login, new LoginMsg() { AccountName = username, AccountPassword = password }, (callbackStatus, reader) =>
+            client.Send(new LoginMsg() { AccountName = username, AccountPassword = password }, (reader) =>
             {
-                if (callbackStatus == CallbackStatus.Ok)
+                LoginResponseMsg msg = reader.ReadMessage<LoginResponseMsg>();
+
+                if (msg.Status == CallbackStatus.Success)
                 {
-                    LoginResponseMsg msg = reader.ReadMessage<LoginResponseMsg>();
-                    loginSucessful = msg.Authenticated; //This will always be true for prototyping
-                if (loginSucessful)
-                    {
-                        uniqueID = msg.UniqueID;
-                        loginResponse = "Login Successful!";
-                    }
-                    else
-                    {
-                        loginResponse = "Login Failed!";
-                    }
+                    uniqueID = msg.UniqueID;
+                    loginSucessful = true;
+                    loginResponse = "Login Successful!";
+                    logger.Log("[ClientAuthentication] - Login Successful!");
                 }
-                if (callbackStatus == CallbackStatus.Error)
+                if (msg.Status == CallbackStatus.Error)
                 {
-                    Debug.LogError("Callback Error: Login error");
+                    logger.LogError("[ClientAuthentication] - Callback Error: Login error");
                 }
-                if (callbackStatus == CallbackStatus.Timeout)
+                if (msg.Status == CallbackStatus.Timeout)
                 {
-                    Debug.LogError("Callback Error: Login attempt timed out");
+                    logger.LogError("[ClientAuthentication] - Callback Error: Login attempt timed out");
                 }
             });
         }

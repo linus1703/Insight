@@ -1,3 +1,4 @@
+using Mirror;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
@@ -6,6 +7,8 @@ namespace Insight
 {
     public class ServerGameManager : InsightModule
     {
+        static readonly ILogger logger = LogFactory.GetLogger(typeof(ServerGameManager));
+
         InsightServer server;
         MasterSpawner masterSpawner;
 
@@ -22,22 +25,22 @@ namespace Insight
             masterSpawner = manager.GetModule<MasterSpawner>();
             RegisterHandlers();
 
-            server.transport.OnServerDisconnected.AddListener(HandleDisconnect);
+            server.transport.OnServerDisconnected=HandleDisconnect;
         }
 
         void RegisterHandlers()
         {
-            server.RegisterHandler((short)MsgId.RegisterGame, HandleRegisterGameMsg);
-            server.RegisterHandler((short)MsgId.GameStatus, HandleGameStatusMsg);
-            server.RegisterHandler((short)MsgId.JoinGame, HandleJoinGameMsg);
-            server.RegisterHandler((short)MsgId.GameList, HandleGameListMsg);
+            server.RegisterHandler<RegisterGameMsg>(HandleRegisterGameMsg);
+            server.RegisterHandler<GameStatusMsg>(HandleGameStatusMsg);
+            server.RegisterHandler<JoinGameMsg>(HandleJoinGameMsg);
+            server.RegisterHandler<GameListMsg>(HandleGameListMsg);
         }
 
         void HandleRegisterGameMsg(InsightNetworkMessage netMsg)
         {
             RegisterGameMsg message = netMsg.ReadMessage<RegisterGameMsg>();
 
-            if (server.logNetworkMessages) { Debug.Log("[GameManager] - Received GameRegistration request"); }
+            logger.Log("[GameManager] - Received GameRegistration request");
 
             registeredGameServers.Add(new GameContainer()
             {
@@ -56,7 +59,7 @@ namespace Insight
         {
             GameStatusMsg message = netMsg.ReadMessage<GameStatusMsg>();
 
-            if (server.logNetworkMessages) { Debug.Log("[GameManager] - Received Game status update"); }
+            logger.Log("[GameManager] - Received Game status update");
 
             foreach (GameContainer game in registeredGameServers)
             {
@@ -82,19 +85,19 @@ namespace Insight
 
         void HandleGameListMsg(InsightNetworkMessage netMsg)
         {
-            if (server.logNetworkMessages) { UnityEngine.Debug.Log("[MatchMaking] - Player Requesting Match list"); }
+            logger.Log("[MatchMaking] - Player Requesting Match list");
 
             GameListMsg gamesListMsg = new GameListMsg();
             gamesListMsg.Load(registeredGameServers);
 
-            netMsg.Reply((short)MsgId.GameList, gamesListMsg);
+            netMsg.Reply(gamesListMsg);
         }
 
         void HandleJoinGameMsg(InsightNetworkMessage netMsg)
         {
-            JoinGamMsg message = netMsg.ReadMessage<JoinGamMsg>();
+            JoinGameMsg message = netMsg.ReadMessage<JoinGameMsg>();
 
-            if (server.logNetworkMessages) { UnityEngine.Debug.Log("[MatchMaking] - Player joining Match."); }
+            logger.Log("[MatchMaking] - Player joining Match.");
 
             GameContainer game = GetGameByUniqueID(message.UniqueID);
 
@@ -105,7 +108,7 @@ namespace Insight
             }
             else
             {
-                netMsg.Reply((short)MsgId.ChangeServers, new ChangeServerMsg()
+                netMsg.Reply(new ChangeServerMsg()
                 {
                     NetworkAddress = game.NetworkAddress,
                     NetworkPort = game.NetworkPort,
